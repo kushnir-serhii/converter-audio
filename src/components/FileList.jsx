@@ -9,7 +9,7 @@ function triggerDownload(row) {
   a.remove();
 }
 
-export default function FileList({ files, onRemove }) {
+export default function FileList({ files, onRemove, onSendToCatalog }) {
   const doneRows = files.filter((f) => f.status === "done");
 
   const downloadAll = async () => {
@@ -22,7 +22,13 @@ export default function FileList({ files, onRemove }) {
   return (
     <div className="rounded-2xl bg-white shadow-sm p-4">
       {files.map((row) => (
-        <FileRow key={row.id} row={row} onRemove={onRemove} onDownload={triggerDownload} />
+        <FileRow
+          key={row.id}
+          row={row}
+          onRemove={onRemove}
+          onDownload={triggerDownload}
+          onSendToCatalog={onSendToCatalog}
+        />
       ))}
 
       {doneRows.length >= 2 && (

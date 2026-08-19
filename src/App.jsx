@@ -5,6 +5,7 @@ import EngineStatus from "./components/EngineStatus.jsx";
 import DropZone from "./components/DropZone.jsx";
 import SettingsBar from "./components/SettingsBar.jsx";
 import FileList from "./components/FileList.jsx";
+import CatalogTab from "./components/catalog/CatalogTab.jsx";
 
 export default function App() {
   const {
@@ -21,6 +22,14 @@ export default function App() {
   const [formatId, setFormatId] = useState("aac");
   const [bitrate, setBitrate] = useState(getFormat("aac").defaultBitrate);
   const [skippedNotice, setSkippedNotice] = useState("");
+  const [tab, setTab] = useState("convert");
+  const [catalogSourceFile, setCatalogSourceFile] = useState(null);
+
+  const sendToCatalog = (row) => {
+    const file = new File([row.resultBlob], row.outputName, { type: row.resultBlob.type });
+    setCatalogSourceFile(file);
+    setTab("catalog");
+  };
 
   const handleFormatChange = (id) => {
     setFormatId(id);
@@ -54,25 +63,55 @@ export default function App() {
 
         <EngineStatus engineState={engineState} onRetry={retryEngine} />
 
-        <DropZone
-          compact={files.length > 0}
-          onFiles={handleFiles}
-          skippedNotice={skippedNotice}
-        />
+        <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
+          {[
+            ["convert", "Convert"],
+            ["catalog", "Catalog"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                tab === id ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-        <SettingsBar
-          formatId={formatId}
-          bitrate={bitrate}
-          onFormatChange={handleFormatChange}
-          onBitrateChange={setBitrate}
-          fileCount={files.length}
-          engineReady={engineState === "ready"}
-          isConverting={isConverting}
-          onConvert={() => convertAll(formatId, bitrate)}
-          onClear={clear}
-        />
+        {tab === "convert" && (
+          <>
+            <DropZone
+              compact={files.length > 0}
+              onFiles={handleFiles}
+              skippedNotice={skippedNotice}
+            />
 
-        {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+            <SettingsBar
+              formatId={formatId}
+              bitrate={bitrate}
+              onFormatChange={handleFormatChange}
+              onBitrateChange={setBitrate}
+              fileCount={files.length}
+              engineReady={engineState === "ready"}
+              isConverting={isConverting}
+              onConvert={() => convertAll(formatId, bitrate)}
+              onClear={clear}
+            />
+
+            {files.length > 0 && (
+              <FileList files={files} onRemove={removeFile} onSendToCatalog={sendToCatalog} />
+            )}
+          </>
+        )}
+
+        {tab === "catalog" && (
+          <CatalogTab
+            incomingSourceFile={catalogSourceFile}
+            onConsumeSourceFile={() => setCatalogSourceFile(null)}
+          />
+        )}
 
         <footer className="text-center text-xs text-zinc-400 mt-4">
           Powered by ffmpeg.wasm · Files are processed locally and never uploaded.
