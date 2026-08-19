@@ -10,9 +10,10 @@ function humanSize(bytes) {
   return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-export default function FileRow({ row, onRemove, onDownload }) {
+export default function FileRow({ row, onRemove, onDownload, onSendToCatalog }) {
   const { file, status, progress, error, outputName, resultBlob } = row;
   const removeDisabled = status === "converting";
+  const canSendToCatalog = status === "done" && outputName && outputName.toLowerCase().endsWith(".m4a");
 
   return (
     <div className="flex items-center gap-3 py-3 border-b border-zinc-100 last:border-b-0">
@@ -51,6 +52,14 @@ export default function FileRow({ row, onRemove, onDownload }) {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {canSendToCatalog && onSendToCatalog && (
+          <button
+            onClick={() => onSendToCatalog(row)}
+            className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50"
+          >
+            Send to catalog
+          </button>
+        )}
         {status === "done" && (
           <button
             onClick={() => onDownload(row)}
