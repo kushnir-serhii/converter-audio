@@ -6,6 +6,7 @@ import DropZone from "./components/DropZone.jsx";
 import SettingsBar from "./components/SettingsBar.jsx";
 import FileList from "./components/FileList.jsx";
 import CatalogTab from "./components/catalog/CatalogTab.jsx";
+import MockupTab from "./components/mockup/MockupTab.jsx";
 
 export default function App() {
   const {
@@ -67,6 +68,7 @@ export default function App() {
           {[
             ["convert", "Convert"],
             ["catalog", "Catalog"],
+            ["mockup", "Mockup"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -112,6 +114,8 @@ export default function App() {
             onConsumeSourceFile={() => setCatalogSourceFile(null)}
           />
         )}
+
+        {tab === "mockup" && <MockupTab />}
 
         <footer className="text-center text-xs text-zinc-400 mt-4">
           Powered by ffmpeg.wasm · Files are processed locally and never uploaded.
