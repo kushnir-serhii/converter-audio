@@ -19,7 +19,7 @@
  */
 
 import { unsharpMask } from "./sharpen.js";
-import { contentSourceRect, isInNotch, parseHexColor } from "./screen.js";
+import { contentSourceRect, isInNotch, isOutsideRoundedCorner, parseHexColor } from "./screen.js";
 
 /**
  * Gaussian elimination with partial pivoting. Solves A·x = B for x, where A
@@ -237,12 +237,14 @@ const SUB = 2;
  *            real camera housing in the photo shows through in front
  *   backing  hex colour painted behind the screenshot, for photos whose screen
  *            is bright enough to show through
+ *   cornerRadius  percentage (0-50) of the screen's shorter side to round off
+ *            each corner, for devices with a rounded screen (most phones)
  */
 export function drawWarpedImage(
   ctx,
   image,
   quad,
-  { sharpen = 0.6, fit = "width", notch = null, backing = null } = {}
+  { sharpen = 0.6, fit = "width", notch = null, backing = null, cornerRadius = 0 } = {}
 ) {
   const naturalW = image.naturalWidth || image.width;
   const naturalH = image.naturalHeight || image.height;
@@ -305,6 +307,10 @@ export function drawWarpedImage(
 
           // Outside the mapped rectangle means outside the quad.
           if (u < 0 || v < 0 || u > src.w || v > src.h) continue;
+
+          // Rounded screen corners — cut before the notch check, since a
+          // notch only ever sits away from the corners anyway.
+          if (isOutsideRoundedCorner(u, v, src.w, src.h, cornerRadius)) continue;
 
           // Leave the notch untouched so the real camera housing in the photo
           // shows through in front of the content, as on a real laptop.

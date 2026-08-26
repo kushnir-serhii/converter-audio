@@ -45,6 +45,47 @@ export function isInNotch(sx, sy, notch) {
 }
 
 /**
+ * Rounded screen corners.
+ *
+ * Radius is a percentage of the screen's *shorter* side — the same idea as
+ * CSS `border-radius: N%`, but measured against `min(w, h)` rather than each
+ * axis separately, so a radius that reads as "nicely rounded" on a narrow
+ * phone screen doesn't look barely-there once applied to a wide monitor.
+ *
+ * The test runs in the same normalized, un-warped screen space as the notch
+ * above (against the source rectangle, before the homography), rather than
+ * against the warped destination quad. That means a corner that's a true
+ * circular arc on the flat screenshot becomes the correct *ellipse* once
+ * perspective is applied — exactly like a real rounded screen photographed
+ * at an angle — for free, with no extra geometry to warp.
+ */
+export const DEFAULT_CORNER_RADIUS = 0;
+
+export function isOutsideRoundedCorner(u, v, w, h, radiusPercent) {
+  if (!(radiusPercent > 0) || !(w > 0) || !(h > 0)) return false;
+  const r = Math.min(radiusPercent, 50) / 100 * Math.min(w, h);
+  if (!(r > 0)) return false;
+
+  let cx, cy;
+  if (u < r && v < r) {
+    cx = r;
+    cy = r;
+  } else if (u > w - r && v < r) {
+    cx = w - r;
+    cy = r;
+  } else if (u > w - r && v > h - r) {
+    cx = w - r;
+    cy = h - r;
+  } else if (u < r && v > h - r) {
+    cx = r;
+    cy = h - r;
+  } else {
+    return false; // not near any corner
+  }
+  return Math.hypot(u - cx, v - cy) > r;
+}
+
+/**
  * Parses "#rgb" / "#rrggbb" into [r,g,b]. Returns null for anything else, so
  * callers can treat "no valid backing colour" as "don't paint a backing".
  */
