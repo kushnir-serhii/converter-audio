@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { defaultQuad } from "../lib/perspective.js";
 import { ASPECT_PRESETS } from "../lib/aspectCrop.js";
-import { DEFAULT_NOTCH } from "../lib/screen.js";
+import { DEFAULT_NOTCH, DEFAULT_CORNER_RADIUS } from "../lib/screen.js";
 
 const SESSION_KEY = "mockup.session";
 
@@ -59,6 +59,10 @@ export function useMockup() {
   const [backing, setBackingState] = useState(() => {
     const v = loadSession().lastBacking;
     return v === undefined ? null : v;
+  });
+  const [cornerRadius, setCornerRadiusState] = useState(() => {
+    const v = loadSession().lastCornerRadius;
+    return typeof v === "number" ? v : DEFAULT_CORNER_RADIUS;
   });
   const [exportScale, setExportScaleState] = useState(() => loadSession().lastExportScale || 2);
   const [sharpen, setSharpenState] = useState(() => {
@@ -149,6 +153,11 @@ export function useMockup() {
     saveSession({ lastBacking: v });
   }, []);
 
+  const setCornerRadius = useCallback((v) => {
+    setCornerRadiusState(v);
+    saveSession({ lastCornerRadius: v });
+  }, []);
+
   const reset = useCallback(() => {
     if (scene) URL.revokeObjectURL(scene.url);
     if (content) URL.revokeObjectURL(content.url);
@@ -182,6 +191,8 @@ export function useMockup() {
     setNotch,
     backing,
     setBacking,
+    cornerRadius,
+    setCornerRadius,
     sharpen,
     setSharpen,
     presets,

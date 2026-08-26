@@ -23,7 +23,7 @@ function renderComposite(
   ctx,
   outputW,
   outputH,
-  { scene, content, quad, focus, viewScale = 1, sharpen = 0.6, fit, notch, backing }
+  { scene, content, quad, focus, viewScale = 1, sharpen = 0.6, fit, notch, backing, cornerRadius }
 ) {
   const s = viewScale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -43,7 +43,7 @@ function renderComposite(
     });
     // Mesh fineness is derived from the quad's size inside drawWarpedImage,
     // so preview and export each get an appropriate one automatically.
-    drawWarpedImage(ctx, content.img, projectedQuad, { sharpen, fit, notch, backing });
+    drawWarpedImage(ctx, content.img, projectedQuad, { sharpen, fit, notch, backing, cornerRadius });
   }
 }
 
@@ -73,6 +73,7 @@ export default function MockupPreview({
   fit = "width",
   notch = null,
   backing = null,
+  cornerRadius = 0,
 }) {
   const canvasRef = useRef(null);
   const [sizeError, setSizeError] = useState("");
@@ -106,8 +107,9 @@ export default function MockupPreview({
       fit,
       notch,
       backing,
+      cornerRadius,
     });
-  }, [scene, content, quad, focus, outputSize, sharpen, fit, notch, backing]);
+  }, [scene, content, quad, focus, outputSize, sharpen, fit, notch, backing, cornerRadius]);
 
   const handleExport = () => {
     if (!scene || !outputSize) return;
@@ -133,6 +135,7 @@ export default function MockupPreview({
           fit,
           notch,
           backing,
+          cornerRadius,
         });
         off.toBlob(
           (blob) => {

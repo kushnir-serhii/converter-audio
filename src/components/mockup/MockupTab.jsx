@@ -91,6 +91,8 @@ export default function MockupTab() {
             onNotchChange={mockup.setNotch}
             backing={mockup.backing}
             onBackingChange={mockup.setBacking}
+            cornerRadius={mockup.cornerRadius}
+            onCornerRadiusChange={mockup.setCornerRadius}
           />
 
           <AspectPicker
@@ -123,6 +125,7 @@ export default function MockupTab() {
             fit={mockup.fit}
             notch={mockup.notch}
             backing={mockup.backing}
+            cornerRadius={mockup.cornerRadius}
           />
         </>
       )}

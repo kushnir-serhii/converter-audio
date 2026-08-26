@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { contentSourceRect, isInNotch, parseHexColor, DEFAULT_NOTCH } from "./screen.js";
+import {
+  contentSourceRect,
+  isInNotch,
+  isOutsideRoundedCorner,
+  parseHexColor,
+  DEFAULT_NOTCH,
+  DEFAULT_CORNER_RADIUS,
+} from "./screen.js";
 
 describe("contentSourceRect", () => {
   it("uses the whole image in 'whole' mode", () => {
@@ -48,6 +55,57 @@ describe("isInNotch", () => {
   it("defaults to off so existing behaviour is unchanged", () => {
     expect(DEFAULT_NOTCH.enabled).toBe(false);
     expect(isInNotch(0.5, 0, DEFAULT_NOTCH)).toBe(false);
+  });
+});
+
+describe("isOutsideRoundedCorner", () => {
+  // 200x100 screen, 20% of the shorter side (100) -> r = 20
+  const w = 200;
+  const h = 100;
+  const r = 20;
+
+  it("is false everywhere when radius is 0 or unset, so existing behaviour is unchanged", () => {
+    expect(isOutsideRoundedCorner(0, 0, w, h, 0)).toBe(false);
+    expect(isOutsideRoundedCorner(0, 0, w, h, DEFAULT_CORNER_RADIUS)).toBe(false);
+    expect(DEFAULT_CORNER_RADIUS).toBe(0);
+  });
+
+  it("never cuts points away from any corner", () => {
+    expect(isOutsideRoundedCorner(w / 2, h / 2, w, h, 25)).toBe(false); // center
+    expect(isOutsideRoundedCorner(w / 2, 0, w, h, 25)).toBe(false); // top edge, mid
+    expect(isOutsideRoundedCorner(r + 1, r + 1, w, h, 20)).toBe(false); // just inside the corner box, near its inner edge
+  });
+
+  it("cuts the extreme corner point itself", () => {
+    expect(isOutsideRoundedCorner(0, 0, w, h, 20)).toBe(true); // top-left
+    expect(isOutsideRoundedCorner(w, 0, w, h, 20)).toBe(true); // top-right
+    expect(isOutsideRoundedCorner(w, h, w, h, 20)).toBe(true); // bottom-right
+    expect(isOutsideRoundedCorner(0, h, w, h, 20)).toBe(true); // bottom-left
+  });
+
+  it("draws the arc where distance to the corner's circle center equals the radius", () => {
+    // top-left corner circle is centered at (r, r); a point exactly r away
+    // along the diagonal should sit right on the boundary either way
+    const cx = r;
+    const cy = r;
+    const onArc = [cx - r / Math.SQRT2, cy - r / Math.SQRT2];
+    const justInside = [cx - (r - 1) / Math.SQRT2, cy - (r - 1) / Math.SQRT2];
+    const justOutside = [cx - (r + 1) / Math.SQRT2, cy - (r + 1) / Math.SQRT2];
+    expect(isOutsideRoundedCorner(...onArc, w, h, 20)).toBe(false);
+    expect(isOutsideRoundedCorner(...justInside, w, h, 20)).toBe(false);
+    expect(isOutsideRoundedCorner(...justOutside, w, h, 20)).toBe(true);
+  });
+
+  it("clamps an oversized radius request to 50% rather than overlapping corners unpredictably", () => {
+    // radius 90% would try for r=90 (>h/2); should behave like 50% (r=50)
+    expect(isOutsideRoundedCorner(0, 0, w, h, 90)).toBe(true);
+    expect(isOutsideRoundedCorner(w / 2, h / 2, w, h, 90)).toBe(false); // center still untouched
+  });
+
+  it("scales radius off the shorter side, so a wide screen doesn't get an exaggerated corner", () => {
+    // same 20% radius on a much wider screen: r is still based on min(w,h) = h = 100 -> r = 20
+    expect(isOutsideRoundedCorner(0, 0, 1000, 100, 20)).toBe(true);
+    expect(isOutsideRoundedCorner(25, 25, 1000, 100, 20)).toBe(false);
   });
 });
 

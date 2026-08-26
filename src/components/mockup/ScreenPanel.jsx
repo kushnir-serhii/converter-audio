@@ -14,7 +14,10 @@ export default function ScreenPanel({
   onNotchChange,
   backing,
   onBackingChange,
+  cornerRadius,
+  onCornerRadiusChange,
 }) {
+  const clampRadius = (v) => Math.max(0, Math.min(50, Math.round(Number(v) || 0)));
   return (
     <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-4">
       <p className="text-sm font-medium text-zinc-700">Screen</p>
@@ -114,6 +117,40 @@ export default function ScreenPanel({
         <p className="text-xs text-zinc-400">
           Paints the screen out before the screenshot goes on — for photos whose screen is
           bright enough to glow through a dark or partly transparent capture.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-zinc-100 pt-3">
+        <span className="text-sm text-zinc-600">Corner radius</span>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min="0"
+            max="50"
+            step="1"
+            value={cornerRadius}
+            onChange={(e) => onCornerRadiusChange(clampRadius(e.target.value))}
+            className="flex-1"
+          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="0"
+              max="50"
+              step="1"
+              value={cornerRadius}
+              onChange={(e) => onCornerRadiusChange(clampRadius(e.target.value))}
+              className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-sm text-right font-mono"
+              aria-label="Corner radius percent"
+            />
+            <span className="text-sm text-zinc-400">%</span>
+          </div>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Rounds the screenshot's corners to match a rounded screen (most phones). Percentage of
+          the screen's shorter side — 0 keeps it square, higher rounds it more, like CSS
+          border-radius. Correctly follows the photo's perspective, so it foreshortens into an
+          ellipse at an angle instead of staying a perfect circle.
         </p>
       </div>
     </div>
