@@ -1,11 +1,15 @@
+import { useState } from "react";
 import { useMockup } from "../../hooks/useMockup.js";
 import ImageDropZone from "./ImageDropZone.jsx";
 import CornerPicker from "./CornerPicker.jsx";
 import AspectPicker from "./AspectPicker.jsx";
+import ScreenPanel from "./ScreenPanel.jsx";
+import Modal from "./Modal.jsx";
 import MockupPreview from "./MockupPreview.jsx";
 
 export default function MockupTab() {
   const mockup = useMockup();
+  const [cornersExpanded, setCornersExpanded] = useState(false);
 
   return (
     <div className="flex flex-col gap-4">
@@ -25,7 +29,15 @@ export default function MockupTab() {
 
       {mockup.scene && (
         <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
-          <p className="text-sm font-medium text-zinc-700">2. Mark the screen corners</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-zinc-700">2. Mark the screen corners</p>
+            <button
+              onClick={() => setCornersExpanded(true)}
+              className="rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-200"
+            >
+              Open large
+            </button>
+          </div>
           <CornerPicker
             image={mockup.scene.img}
             naturalW={mockup.scene.w}
@@ -34,8 +46,29 @@ export default function MockupTab() {
             onChange={mockup.updateQuad}
             onReset={mockup.resetQuad}
           />
+          <p className="text-xs text-zinc-400">
+            Fiddly at this size — open it large to place the corners precisely.
+          </p>
         </div>
       )}
+
+      <Modal
+        open={cornersExpanded && !!mockup.scene}
+        onClose={() => setCornersExpanded(false)}
+        title="Mark the screen corners"
+      >
+        {mockup.scene && (
+          <CornerPicker
+            fullscreen
+            image={mockup.scene.img}
+            naturalW={mockup.scene.w}
+            naturalH={mockup.scene.h}
+            quad={mockup.quad}
+            onChange={mockup.updateQuad}
+            onReset={mockup.resetQuad}
+          />
+        )}
+      </Modal>
 
       {mockup.scene && (
         <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
@@ -51,6 +84,15 @@ export default function MockupTab() {
 
       {mockup.scene && (
         <>
+          <ScreenPanel
+            fit={mockup.fit}
+            onFitChange={mockup.setFit}
+            notch={mockup.notch}
+            onNotchChange={mockup.setNotch}
+            backing={mockup.backing}
+            onBackingChange={mockup.setBacking}
+          />
+
           <AspectPicker
             presets={mockup.presets}
             presetId={mockup.presetId}
@@ -78,6 +120,9 @@ export default function MockupTab() {
             onFormatChange={mockup.setFormat}
             exportScale={mockup.exportScale}
             sharpen={mockup.sharpen}
+            fit={mockup.fit}
+            notch={mockup.notch}
+            backing={mockup.backing}
           />
         </>
       )}

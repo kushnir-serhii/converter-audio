@@ -19,6 +19,7 @@
  */
 
 import { unsharpMask } from "./sharpen.js";
+import { contentSourceRect, isInNotch, parseHexColor } from "./screen.js";
 
 /**
  * Gaussian elimination with partial pivoting. Solves A·x = B for x, where A
@@ -150,52 +151,68 @@ export function sampleBilinear(data, w, h, x, y, out) {
 }
 
 /**
- * Shrinks the source toward the size it will occupy on screen, by repeated
- * halving. Each halving area-averages 2×2, which is the cheap way to get
- * proper minification — sampling a 2560px screenshot directly into a 350px
- * screen would read 4 texels per output pixel and ignore the other ~45,
- * turning thin UI lines into aliased mush.
+ * Extracts the part of the screenshot that goes on the screen and shrinks it
+ * toward the size it will occupy there.
  *
- * SUPERSAMPLE keeps a little detail headroom above the exact target.
+ * The crop is computed on the ORIGINAL image, not on a pre-shrunk copy: the
+ * prescale is deliberately non-uniform (width and height are driven to
+ * separate targets, which the homography then compensates for exactly), so a
+ * fraction measured in prescaled pixels would not be the same fraction of the
+ * real screenshot. Cropping first keeps "top 15% of a long page" meaning that.
+ *
+ * Shrinking is done by repeated halving, each step area-averaging 2x2. Doing
+ * a 7x downscale in one drawImage would read 4 texels per output pixel and
+ * ignore the other ~45, turning thin UI lines into aliased mush.
  */
 const SUPERSAMPLE = 1.4;
+const MAX_INTERMEDIATE = 4096;
 
-function toCanvas(source, w, h) {
+function cropToCanvas(source, rect, w, h) {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, 0, 0, w, h);
+  ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, w, h);
   return canvas;
 }
 
-function prescaleSource(image, srcW, srcH, targetW, targetH) {
-  const wantW = Math.max(1, Math.min(srcW, Math.ceil(targetW * SUPERSAMPLE)));
-  const wantH = Math.max(1, Math.min(srcH, Math.ceil(targetH * SUPERSAMPLE)));
+function prescaleRegion(image, rect, targetW, targetH) {
+  const rectW = Math.max(1, Math.round(rect.w));
+  const rectH = Math.max(1, Math.round(rect.h));
+  const wantW = Math.max(1, Math.min(rectW, Math.ceil(targetW * SUPERSAMPLE)));
+  const wantH = Math.max(1, Math.min(rectH, Math.ceil(targetH * SUPERSAMPLE)));
 
-  let curW = srcW;
-  let curH = srcH;
-  let current = image;
+  // Extract the crop, pre-halving first if it would make an unreasonably
+  // large intermediate canvas (a full-page capture can be many thousands tall).
+  let curW = rectW;
+  let curH = rectH;
+  while (
+    (curW > MAX_INTERMEDIATE || curH > MAX_INTERMEDIATE) &&
+    curW > wantW * 2 &&
+    curH > wantH * 2
+  ) {
+    curW = Math.max(wantW, Math.floor(curW / 2));
+    curH = Math.max(wantH, Math.floor(curH / 2));
+  }
+  let canvas = cropToCanvas(image, rect, curW, curH);
 
+  // Then halve down to the target.
   while (curW > wantW * 2 && curH > wantH * 2) {
     const nextW = Math.max(wantW, Math.floor(curW / 2));
     const nextH = Math.max(wantH, Math.floor(curH / 2));
-    current = toCanvas(current, nextW, nextH);
+    canvas = cropToCanvas(canvas, { x: 0, y: 0, w: curW, h: curH }, nextW, nextH);
     curW = nextW;
     curH = nextH;
   }
-
   if (curW !== wantW || curH !== wantH) {
-    current = toCanvas(current, wantW, wantH);
+    canvas = cropToCanvas(canvas, { x: 0, y: 0, w: curW, h: curH }, wantW, wantH);
     curW = wantW;
     curH = wantH;
   }
 
-  // Always hand back a canvas so pixels can be read out.
-  if (!current.getContext) current = toCanvas(current, curW, curH);
-  return { canvas: current, w: curW, h: curH };
+  return { canvas, w: curW, h: curH };
 }
 
 /**
@@ -211,8 +228,22 @@ const SUB = 2;
  *
  * Implemented by inverse mapping every destination pixel through the
  * homography, so the result contains no seams of any kind.
+ *
+ * Options:
+ *   sharpen  unsharp amount applied to the result (0 disables)
+ *   fit      "width" crops a tall screenshot to the screen's aspect; "whole"
+ *            squeezes all of it on
+ *   notch    {enabled,width,height} region left untouched at top centre, so a
+ *            real camera housing in the photo shows through in front
+ *   backing  hex colour painted behind the screenshot, for photos whose screen
+ *            is bright enough to show through
  */
-export function drawWarpedImage(ctx, image, quad, { sharpen = 0.6 } = {}) {
+export function drawWarpedImage(
+  ctx,
+  image,
+  quad,
+  { sharpen = 0.6, fit = "width", notch = null, backing = null } = {}
+) {
   const naturalW = image.naturalWidth || image.width;
   const naturalH = image.naturalHeight || image.height;
   if (!naturalW || !naturalH) return;
@@ -223,11 +254,16 @@ export function drawWarpedImage(ctx, image, quad, { sharpen = 0.6 } = {}) {
   if (box.w <= 0 || box.h <= 0) return;
 
   const extent = quadExtent(quad);
-  const src = prescaleSource(image, naturalW, naturalH, extent.w, extent.h);
+  const screenAspect = extent.h > 0 ? extent.w / extent.h : 0;
+
+  // Crop on the original, then shrink — see prescaleRegion.
+  const cropRect = contentSourceRect(naturalW, naturalH, screenAspect, fit);
+  const src = prescaleRegion(image, cropRect, extent.w, extent.h);
   const srcCtx = src.canvas.getContext("2d", { willReadFrequently: true });
   const srcData = srcCtx.getImageData(0, 0, src.w, src.h).data;
+  const backingRGB = parseHexColor(backing);
 
-  // Homography straight from destination space to source space.
+  // Homography straight from destination space to the prescaled crop.
   const srcRect = [
     [0, 0],
     [src.w, 0],
@@ -254,6 +290,7 @@ export function drawWarpedImage(ctx, image, quad, { sharpen = 0.6 } = {}) {
       let r = 0;
       let g = 0;
       let b = 0;
+      let alpha = 0;
       let inside = 0;
 
       for (let sy = 0; sy < SUB; sy++) {
@@ -266,23 +303,39 @@ export function drawWarpedImage(ctx, image, quad, { sharpen = 0.6 } = {}) {
           const u = (ia * dx + ib * dy + ic) / w;
           const v = (id * dx + ie * dy + iff) / w;
 
-          // Outside the source rectangle means outside the quad.
+          // Outside the mapped rectangle means outside the quad.
           if (u < 0 || v < 0 || u > src.w || v > src.h) continue;
 
+          // Leave the notch untouched so the real camera housing in the photo
+          // shows through in front of the content, as on a real laptop.
+          if (isInNotch(u / src.w, v / src.h, notch)) continue;
+
           sampleBilinear(srcData, src.w, src.h, u - 0.5, v - 0.5, texel);
-          r += texel[0];
-          g += texel[1];
-          b += texel[2];
+          const ca = texel[3] / 255;
+
+          if (backingRGB) {
+            // Paint the screen out first, so a bright screen in the photo
+            // cannot glow through a dark or partly transparent screenshot.
+            r += backingRGB[0] * (1 - ca) + texel[0] * ca;
+            g += backingRGB[1] * (1 - ca) + texel[1] * ca;
+            b += backingRGB[2] * (1 - ca) + texel[2] * ca;
+            alpha += 1;
+          } else {
+            r += texel[0] * ca;
+            g += texel[1] * ca;
+            b += texel[2] * ca;
+            alpha += ca;
+          }
           inside++;
         }
       }
 
-      if (inside === 0) continue;
+      if (inside === 0 || alpha <= 0) continue;
       const o = (py * box.w + px) * 4;
-      outData[o] = r / inside;
-      outData[o + 1] = g / inside;
-      outData[o + 2] = b / inside;
-      outData[o + 3] = (inside / total) * 255;
+      outData[o] = r / alpha;
+      outData[o + 1] = g / alpha;
+      outData[o + 2] = b / alpha;
+      outData[o + 3] = (alpha / total) * 255;
     }
   }
 

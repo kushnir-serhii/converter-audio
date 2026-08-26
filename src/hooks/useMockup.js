@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { defaultQuad } from "../lib/perspective.js";
 import { ASPECT_PRESETS } from "../lib/aspectCrop.js";
+import { DEFAULT_NOTCH } from "../lib/screen.js";
 
 const SESSION_KEY = "mockup.session";
 
@@ -50,6 +51,15 @@ export function useMockup() {
   const [customW, setCustomW] = useState(() => loadSession().lastCustomW || 800);
   const [customH, setCustomH] = useState(() => loadSession().lastCustomH || 600);
   const [format, setFormat] = useState("webp");
+  const [fit, setFitState] = useState(() => loadSession().lastFit || "width");
+  const [notch, setNotchState] = useState(() => ({
+    ...DEFAULT_NOTCH,
+    ...(loadSession().lastNotch || {}),
+  }));
+  const [backing, setBackingState] = useState(() => {
+    const v = loadSession().lastBacking;
+    return v === undefined ? null : v;
+  });
   const [exportScale, setExportScaleState] = useState(() => loadSession().lastExportScale || 2);
   const [sharpen, setSharpenState] = useState(() => {
     const v = loadSession().lastSharpen;
@@ -124,6 +134,21 @@ export function useMockup() {
     saveSession({ lastSharpen: v });
   }, []);
 
+  const setFit = useCallback((v) => {
+    setFitState(v);
+    saveSession({ lastFit: v });
+  }, []);
+
+  const setNotch = useCallback((v) => {
+    setNotchState(v);
+    saveSession({ lastNotch: v });
+  }, []);
+
+  const setBacking = useCallback((v) => {
+    setBackingState(v);
+    saveSession({ lastBacking: v });
+  }, []);
+
   const reset = useCallback(() => {
     if (scene) URL.revokeObjectURL(scene.url);
     if (content) URL.revokeObjectURL(content.url);
@@ -151,6 +176,12 @@ export function useMockup() {
     setFormat,
     exportScale,
     setExportScale,
+    fit,
+    setFit,
+    notch,
+    setNotch,
+    backing,
+    setBacking,
     sharpen,
     setSharpen,
     presets,

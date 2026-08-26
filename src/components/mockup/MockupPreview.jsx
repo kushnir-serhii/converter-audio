@@ -19,7 +19,12 @@ const MIME = { webp: "image/webp", png: "image/png" };
  * the canvas matrix instead of multiplying into it — an outer scale would be
  * silently discarded for the warped layer and the two layers would disagree.
  */
-function renderComposite(ctx, outputW, outputH, { scene, content, quad, focus, viewScale = 1, sharpen = 0.6 }) {
+function renderComposite(
+  ctx,
+  outputW,
+  outputH,
+  { scene, content, quad, focus, viewScale = 1, sharpen = 0.6, fit, notch, backing }
+) {
   const s = viewScale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, outputW * s, outputH * s);
@@ -38,7 +43,7 @@ function renderComposite(ctx, outputW, outputH, { scene, content, quad, focus, v
     });
     // Mesh fineness is derived from the quad's size inside drawWarpedImage,
     // so preview and export each get an appropriate one automatically.
-    drawWarpedImage(ctx, content.img, projectedQuad, { sharpen });
+    drawWarpedImage(ctx, content.img, projectedQuad, { sharpen, fit, notch, backing });
   }
 }
 
@@ -65,6 +70,9 @@ export default function MockupPreview({
   onFormatChange,
   exportScale = 1,
   sharpen = 0.6,
+  fit = "width",
+  notch = null,
+  backing = null,
 }) {
   const canvasRef = useRef(null);
   const [sizeError, setSizeError] = useState("");
@@ -95,8 +103,11 @@ export default function MockupPreview({
       focus,
       viewScale: previewScale,
       sharpen,
+      fit,
+      notch,
+      backing,
     });
-  }, [scene, content, quad, focus, outputSize, sharpen]);
+  }, [scene, content, quad, focus, outputSize, sharpen, fit, notch, backing]);
 
   const handleExport = () => {
     if (!scene || !outputSize) return;
@@ -119,6 +130,9 @@ export default function MockupPreview({
           focus,
           viewScale: exportScale,
           sharpen,
+          fit,
+          notch,
+          backing,
         });
         off.toBlob(
           (blob) => {
