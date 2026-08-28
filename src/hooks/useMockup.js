@@ -23,7 +23,7 @@ function saveSession(partial) {
   }
 }
 
-/** A short, stable-ish key for "this scene photo" so corners can be remembered per-photo. */
+/** A short, stable-ish key for "this scene photo" so layers can be remembered per-photo. */
 function sceneKey(file) {
   if (!file) return null;
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -42,34 +42,102 @@ function loadImage(file) {
   });
 }
 
+let layerSeq = 0;
+function newLayerId() {
+  layerSeq += 1;
+  return `layer-${layerSeq}`;
+}
+
+/** A screen: one screenshot warped into one quad on the scene, with its own screen settings. */
+function freshLayer(quad, overrides = {}) {
+  return {
+    id: newLayerId(),
+    content: null, // { img, url, w, h } — never persisted, re-upload each session like before
+    quad,
+    fit: "width",
+    notch: { ...DEFAULT_NOTCH },
+    backing: null,
+    cornerRadius: DEFAULT_CORNER_RADIUS,
+    ...overrides,
+  };
+}
+
+/**
+ * Default corners for the Nth screen added to a scene (0-based). The first
+ * screen gets the classic centered inset rect. Every screen after that would
+ * otherwise start at that exact same rect — which looks, once you drop a
+ * screenshot onto it, exactly like "adding a second screen replaced the
+ * first": the new one is drawn on top and completely covers it. Cascading
+ * later screens across different quadrants of the photo makes them visible
+ * (and separately draggable onto the right device) the moment they're added.
+ */
+function defaultQuadForIndex(w, h, index) {
+  if (index <= 0) return defaultQuad(w, h);
+  const slots = [
+    [0.06, 0.22, 0.46, 0.78], // left half
+    [0.54, 0.22, 0.94, 0.78], // right half
+    [0.22, 0.06, 0.78, 0.46], // top half
+    [0.22, 0.54, 0.78, 0.94], // bottom half
+  ];
+  const [x0, y0, x1, y1] = slots[(index - 1) % slots.length];
+  return [
+    [x0 * w, y0 * h],
+    [x1 * w, y0 * h],
+    [x1 * w, y1 * h],
+    [x0 * w, y1 * h],
+  ];
+}
+
+/** Restores the layers remembered for this scene photo, or starts fresh with one. */
+function restoreLayers(key, w, h) {
+  const saved = loadSession();
+  const savedLayers = saved.layersByScene?.[key];
+  if (Array.isArray(savedLayers) && savedLayers.length > 0) {
+    return savedLayers.map((l) =>
+      freshLayer(l.quad && l.quad.length === 4 ? l.quad : defaultQuad(w, h), {
+        fit: l.fit || "width",
+        notch: { ...DEFAULT_NOTCH, ...(l.notch || {}) },
+        backing: l.backing ?? null,
+        cornerRadius: typeof l.cornerRadius === "number" ? l.cornerRadius : DEFAULT_CORNER_RADIUS,
+      })
+    );
+  }
+  // Legacy single-quad sessions, from before multi-layer support.
+  const legacyQuad = saved.quads?.[key];
+  if (Array.isArray(legacyQuad) && legacyQuad.length === 4) {
+    return [freshLayer(legacyQuad)];
+  }
+  return [freshLayer(defaultQuad(w, h))];
+}
+
 export function useMockup() {
   const [scene, setScene] = useState(null); // { img, url, key, w, h }
-  const [content, setContent] = useState(null); // { img, url, w, h }
-  const [quad, setQuad] = useState(null); // [[x,y] x4] in scene natural pixels, TL TR BR BL
+  const [layers, setLayers] = useState(() => [freshLayer(null)]);
+  const [activeLayerId, setActiveLayerId] = useState(() => layers[0].id);
   const [focus, setFocus] = useState({ x: 0.5, y: 0.5 });
   const [presetId, setPresetId] = useState(() => loadSession().lastPresetId || "portfolio");
   const [customW, setCustomW] = useState(() => loadSession().lastCustomW || 800);
   const [customH, setCustomH] = useState(() => loadSession().lastCustomH || 600);
   const [format, setFormat] = useState("webp");
-  const [fit, setFitState] = useState(() => loadSession().lastFit || "width");
-  const [notch, setNotchState] = useState(() => ({
-    ...DEFAULT_NOTCH,
-    ...(loadSession().lastNotch || {}),
-  }));
-  const [backing, setBackingState] = useState(() => {
-    const v = loadSession().lastBacking;
-    return v === undefined ? null : v;
-  });
-  const [cornerRadius, setCornerRadiusState] = useState(() => {
-    const v = loadSession().lastCornerRadius;
-    return typeof v === "number" ? v : DEFAULT_CORNER_RADIUS;
-  });
   const [exportScale, setExportScaleState] = useState(() => loadSession().lastExportScale || 2);
   const [sharpen, setSharpenState] = useState(() => {
     const v = loadSession().lastSharpen;
     return typeof v === "number" ? v : 0.6;
   });
   const [error, setError] = useState("");
+
+  const persistLayers = useCallback((nextLayers, sceneObj) => {
+    if (!sceneObj?.key) return;
+    const layersByScene = { ...(loadSession().layersByScene || {}) };
+    layersByScene[sceneObj.key] = nextLayers.map(({ quad, fit, notch, backing, cornerRadius }) => ({
+      quad,
+      fit,
+      notch,
+      backing,
+      cornerRadius,
+    }));
+    saveSession({ layersByScene });
+  }, []);
 
   const loadScene = useCallback(async (file) => {
     setError("");
@@ -79,10 +147,12 @@ export function useMockup() {
       const key = sceneKey(file);
       const w = img.naturalWidth;
       const h = img.naturalHeight;
-      setScene({ img, url, key, w, h });
+      const nextScene = { img, url, key, w, h };
+      setScene(nextScene);
 
-      const remembered = loadSession().quads?.[key];
-      setQuad(remembered && remembered.length === 4 ? remembered : defaultQuad(w, h));
+      const restored = restoreLayers(key, w, h);
+      setLayers(restored);
+      setActiveLayerId(restored[0].id);
     } catch (err) {
       setError(err.message || String(err));
     }
@@ -92,30 +162,68 @@ export function useMockup() {
     setError("");
     try {
       const { img, url } = await loadImage(file);
-      setContent((prev) => {
-        if (prev) URL.revokeObjectURL(prev.url);
-        return { img, url, w: img.naturalWidth, h: img.naturalHeight };
-      });
+      setLayers((prev) =>
+        prev.map((l) => {
+          if (l.id !== activeLayerId) return l;
+          if (l.content) URL.revokeObjectURL(l.content.url);
+          return { ...l, content: { img, url, w: img.naturalWidth, h: img.naturalHeight } };
+        })
+      );
     } catch (err) {
       setError(err.message || String(err));
     }
-  }, []);
+  }, [activeLayerId]);
 
-  const updateQuad = useCallback((next) => {
-    setQuad(next);
-    setScene((s) => {
-      if (s?.key) {
-        const quads = { ...(loadSession().quads || {}), [s.key]: next };
-        saveSession({ quads });
-      }
-      return s;
+  const updateLayer = useCallback((id, patch) => {
+    setLayers((prev) => {
+      const next = prev.map((l) => (l.id === id ? { ...l, ...patch } : l));
+      persistLayers(next, scene);
+      return next;
     });
-  }, []);
+  }, [persistLayers, scene]);
+
+  const updateQuad = useCallback((next) => updateLayer(activeLayerId, { quad: next }), [activeLayerId, updateLayer]);
 
   const resetQuad = useCallback(() => {
     if (!scene) return;
     updateQuad(defaultQuad(scene.w, scene.h));
   }, [scene, updateQuad]);
+
+  const setFit = useCallback((v) => updateLayer(activeLayerId, { fit: v }), [activeLayerId, updateLayer]);
+  const setNotch = useCallback((v) => updateLayer(activeLayerId, { notch: v }), [activeLayerId, updateLayer]);
+  const setBacking = useCallback((v) => updateLayer(activeLayerId, { backing: v }), [activeLayerId, updateLayer]);
+  const setCornerRadius = useCallback(
+    (v) => updateLayer(activeLayerId, { cornerRadius: v }),
+    [activeLayerId, updateLayer]
+  );
+
+  const addLayer = useCallback(() => {
+    if (!scene) return;
+    // Computed once, outside the setLayers updater — an updater function can
+    // run more than once (React StrictMode double-invokes it in dev), and
+    // freshLayer() mints a new id each call, so generating the layer inside
+    // one risked setActiveLayerId disagreeing with whichever id actually
+    // made it into the committed layers array.
+    const layer = freshLayer(defaultQuadForIndex(scene.w, scene.h, layers.length));
+    setLayers((prev) => {
+      const next = [...prev, layer];
+      persistLayers(next, scene);
+      return next;
+    });
+    setActiveLayerId(layer.id);
+  }, [scene, layers, persistLayers]);
+
+  const removeLayer = useCallback((id) => {
+    setLayers((prev) => {
+      if (prev.length <= 1) return prev; // always keep at least one screen
+      const removed = prev.find((l) => l.id === id);
+      if (removed?.content) URL.revokeObjectURL(removed.content.url);
+      const next = prev.filter((l) => l.id !== id);
+      persistLayers(next, scene);
+      setActiveLayerId((cur) => (cur === id ? next[0].id : cur));
+      return next;
+    });
+  }, [persistLayers, scene]);
 
   const setPreset = useCallback((id) => {
     setPresetId(id);
@@ -138,42 +246,32 @@ export function useMockup() {
     saveSession({ lastSharpen: v });
   }, []);
 
-  const setFit = useCallback((v) => {
-    setFitState(v);
-    saveSession({ lastFit: v });
-  }, []);
-
-  const setNotch = useCallback((v) => {
-    setNotchState(v);
-    saveSession({ lastNotch: v });
-  }, []);
-
-  const setBacking = useCallback((v) => {
-    setBackingState(v);
-    saveSession({ lastBacking: v });
-  }, []);
-
-  const setCornerRadius = useCallback((v) => {
-    setCornerRadiusState(v);
-    saveSession({ lastCornerRadius: v });
-  }, []);
-
   const reset = useCallback(() => {
     if (scene) URL.revokeObjectURL(scene.url);
-    if (content) URL.revokeObjectURL(content.url);
+    layers.forEach((l) => l.content && URL.revokeObjectURL(l.content.url));
     setScene(null);
-    setContent(null);
-    setQuad(null);
+    const layer = freshLayer(null);
+    setLayers([layer]);
+    setActiveLayerId(layer.id);
     setFocus({ x: 0.5, y: 0.5 });
     setError("");
-  }, [scene, content]);
+  }, [scene, layers]);
 
   const presets = useMemo(() => ASPECT_PRESETS, []);
+  const activeLayer = layers.find((l) => l.id === activeLayerId) || layers[0];
 
   return {
     scene,
-    content,
-    quad,
+    layers,
+    activeLayerId,
+    setActiveLayerId,
+    addLayer,
+    removeLayer,
+    // Convenience: the active layer's own fields, so single-screen UI (corner
+    // picker, screen panel, screenshot upload) can bind to "the current one"
+    // without knowing layers exist.
+    content: activeLayer?.content ?? null,
+    quad: activeLayer?.quad ?? null,
     focus,
     setFocus,
     presetId,
@@ -185,13 +283,13 @@ export function useMockup() {
     setFormat,
     exportScale,
     setExportScale,
-    fit,
+    fit: activeLayer?.fit ?? "width",
     setFit,
-    notch,
+    notch: activeLayer?.notch ?? { ...DEFAULT_NOTCH },
     setNotch,
-    backing,
+    backing: activeLayer?.backing ?? null,
     setBacking,
-    cornerRadius,
+    cornerRadius: activeLayer?.cornerRadius ?? DEFAULT_CORNER_RADIUS,
     setCornerRadius,
     sharpen,
     setSharpen,
