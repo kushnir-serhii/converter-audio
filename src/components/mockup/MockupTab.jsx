@@ -30,7 +30,56 @@ export default function MockupTab() {
       {mockup.scene && (
         <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-zinc-700">2. Mark the screen corners</p>
+            <p className="text-sm font-medium text-zinc-700">2. Screens on this mockup</p>
+            <button
+              onClick={mockup.addLayer}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              + Add screen
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 -mt-1">
+            One mockup can hold more than one screenshot — a phone and a laptop in the same
+            photo, or two screens side by side. Each has its own corners and screen settings;
+            the one selected below is the one you're editing.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {mockup.layers.map((l, i) => (
+              <div
+                key={l.id}
+                className={`flex items-center gap-1 rounded-lg pl-3 pr-1 py-1.5 text-sm font-medium transition-colors ${
+                  l.id === mockup.activeLayerId
+                    ? "bg-indigo-600 text-white"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                }`}
+              >
+                <button onClick={() => mockup.setActiveLayerId(l.id)}>
+                  Screen {i + 1}
+                  {!l.content && <span className="opacity-70"> — empty</span>}
+                </button>
+                {mockup.layers.length > 1 && (
+                  <button
+                    onClick={() => mockup.removeLayer(l.id)}
+                    aria-label={`Remove screen ${i + 1}`}
+                    className={`rounded px-1.5 leading-none ${
+                      l.id === mockup.activeLayerId
+                        ? "hover:bg-indigo-500"
+                        : "hover:bg-zinc-300"
+                    }`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {mockup.scene && (
+        <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-zinc-700">3. Mark the screen corners</p>
             <button
               onClick={() => setCornersExpanded(true)}
               className="rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-200"
@@ -55,7 +104,9 @@ export default function MockupTab() {
       <Modal
         open={cornersExpanded && !!mockup.scene}
         onClose={() => setCornersExpanded(false)}
-        title="Mark the screen corners"
+        title={`Mark the screen corners — Screen ${
+          mockup.layers.findIndex((l) => l.id === mockup.activeLayerId) + 1
+        }`}
       >
         {mockup.scene && (
           <CornerPicker
@@ -72,7 +123,11 @@ export default function MockupTab() {
 
       {mockup.scene && (
         <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
-          <p className="text-sm font-medium text-zinc-700">3. Screenshot to composite</p>
+          <p className="text-sm font-medium text-zinc-700">4. Screenshot to composite</p>
+          <p className="text-xs text-zinc-500 -mt-1">
+            Goes on the selected screen ({mockup.layers.findIndex((l) => l.id === mockup.activeLayerId) + 1}
+            {" "}of {mockup.layers.length}).
+          </p>
           <ImageDropZone
             label="Drag & drop the content screenshot"
             hint="Whatever should appear on the screen"
@@ -112,8 +167,7 @@ export default function MockupTab() {
 
           <MockupPreview
             scene={mockup.scene}
-            content={mockup.content}
-            quad={mockup.quad}
+            layers={mockup.layers}
             focus={mockup.focus}
             presetId={mockup.presetId}
             customW={mockup.customW}
@@ -122,10 +176,6 @@ export default function MockupTab() {
             onFormatChange={mockup.setFormat}
             exportScale={mockup.exportScale}
             sharpen={mockup.sharpen}
-            fit={mockup.fit}
-            notch={mockup.notch}
-            backing={mockup.backing}
-            cornerRadius={mockup.cornerRadius}
           />
         </>
       )}

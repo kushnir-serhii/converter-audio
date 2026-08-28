@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  resolveOutputSize,
-  coverTransform,
-  applyTransform,
-  scaleOutputSize,
-} from "../../lib/aspectCrop.js";
+import { resolveOutputSize, coverTransform, applyTransform, scaleOutputSize } from "../../lib/aspectCrop.js";
 import { drawWarpedImage } from "../../lib/perspective.js";
 
 const PREVIEW_MAX_W = 900;
@@ -13,17 +8,18 @@ const MIME = { webp: "image/webp", png: "image/png" };
 /**
  * Renders the whole composite into `ctx`.
  *
- * `viewScale` shrinks the result for on-screen preview. It is folded into the
- * transforms here rather than applied with an outer `ctx.scale()`, because
- * the warp sets its per-triangle matrix with `setTransform`, which *replaces*
- * the canvas matrix instead of multiplying into it — an outer scale would be
- * silently discarded for the warped layer and the two layers would disagree.
+ * `viewScale` resizes the result: below 1 for the on-screen preview, above 1
+ * for a 2×/3× export. It is folded into the transforms here rather than
+ * applied with an outer `ctx.scale()`, because the warp writes pixels directly
+ * and sets the matrix with `setTransform`, which *replaces* the canvas matrix
+ * rather than multiplying into it — an outer scale would be silently ignored
+ * by the warped layer, leaving the two layers disagreeing about size.
  */
 function renderComposite(
   ctx,
   outputW,
   outputH,
-  { scene, content, quad, focus, viewScale = 1, sharpen = 0.6, fit, notch, backing, cornerRadius }
+  { scene, layers, focus, viewScale = 1, sharpen = 0.6 }
 ) {
   const s = viewScale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -36,14 +32,21 @@ function renderComposite(
   ctx.drawImage(scene.img, 0, 0);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  if (content && quad) {
-    const projectedQuad = quad.map(([x, y]) => {
+  // Each screen is its own screenshot + quad + fit/notch/backing/corner
+  // settings, drawn in order — later layers composite on top of earlier ones.
+  for (const layer of layers || []) {
+    if (!layer.content || !layer.quad) continue;
+    const projectedQuad = layer.quad.map(([x, y]) => {
       const [px, py] = applyTransform(t, x, y);
       return [px * s, py * s];
     });
-    // Mesh fineness is derived from the quad's size inside drawWarpedImage,
-    // so preview and export each get an appropriate one automatically.
-    drawWarpedImage(ctx, content.img, projectedQuad, { sharpen, fit, notch, backing, cornerRadius });
+    drawWarpedImage(ctx, layer.content.img, projectedQuad, {
+      sharpen,
+      fit: layer.fit,
+      notch: layer.notch,
+      backing: layer.backing,
+      cornerRadius: layer.cornerRadius,
+    });
   }
 }
 
@@ -60,8 +63,7 @@ function triggerDownload(filename, blob) {
 
 export default function MockupPreview({
   scene,
-  content,
-  quad,
+  layers = [],
   focus,
   presetId,
   customW,
@@ -70,10 +72,6 @@ export default function MockupPreview({
   onFormatChange,
   exportScale = 1,
   sharpen = 0.6,
-  fit = "width",
-  notch = null,
-  backing = null,
-  cornerRadius = 0,
 }) {
   const canvasRef = useRef(null);
   const [sizeError, setSizeError] = useState("");
@@ -99,17 +97,12 @@ export default function MockupPreview({
     const ctx = canvas.getContext("2d");
     renderComposite(ctx, outputSize.w, outputSize.h, {
       scene,
-      content,
-      quad,
+      layers,
       focus,
       viewScale: previewScale,
       sharpen,
-      fit,
-      notch,
-      backing,
-      cornerRadius,
     });
-  }, [scene, content, quad, focus, outputSize, sharpen, fit, notch, backing, cornerRadius]);
+  }, [scene, layers, focus, outputSize, sharpen]);
 
   const handleExport = () => {
     if (!scene || !outputSize) return;
@@ -117,25 +110,19 @@ export default function MockupPreview({
     // Defer a tick so the "Exporting…" state paints before the (synchronous) full-res render.
     setTimeout(() => {
       try {
-        // The quad and cover-fit live in 1x output space; exporting larger
-        // re-renders the whole frame — scene photo included — at that scale,
-        // rather than upscaling a finished 1x image.
         const exportSize = scaleOutputSize(outputSize, exportScale);
         const off = document.createElement("canvas");
         off.width = exportSize.w;
         off.height = exportSize.h;
         const ctx = off.getContext("2d");
+        // The quad lives in 1x output space, so the whole composite is scaled
+        // up by the same viewScale mechanism the preview uses to scale down.
         renderComposite(ctx, outputSize.w, outputSize.h, {
           scene,
-          content,
-          quad,
+          layers,
           focus,
           viewScale: exportScale,
           sharpen,
-          fit,
-          notch,
-          backing,
-          cornerRadius,
         });
         off.toBlob(
           (blob) => {
@@ -172,7 +159,7 @@ export default function MockupPreview({
         </div>
       )}
 
-      {!content && (
+      {!layers.some((l) => l.content) && (
         <p className="text-xs text-zinc-400">Load a screenshot above to see it composited in.</p>
       )}
 
@@ -193,7 +180,7 @@ export default function MockupPreview({
 
         <button
           onClick={handleExport}
-          disabled={!scene || !content || !outputSize || exporting}
+          disabled={!scene || !layers.some((l) => l.content && l.quad) || !outputSize || exporting}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
         >
           {exporting ? "Exporting…" : "Export image"}
