@@ -5,6 +5,7 @@ import EngineStatus from "./components/EngineStatus.jsx";
 import DropZone from "./components/DropZone.jsx";
 import SettingsBar from "./components/SettingsBar.jsx";
 import FileList from "./components/FileList.jsx";
+import VideoTab from "./components/video/VideoTab.jsx";
 import CatalogTab from "./components/catalog/CatalogTab.jsx";
 import MockupTab from "./components/mockup/MockupTab.jsx";
 
@@ -26,6 +27,8 @@ export default function App() {
   const [tab, setTab] = useState("convert");
   const [catalogSourceFile, setCatalogSourceFile] = useState(null);
 
+  // Shared by both media tabs: the video tab can extract an .m4a and hand it
+  // straight to the catalog, exactly like a converted audio row.
   const sendToCatalog = (row) => {
     const file = new File([row.resultBlob], row.outputName, { type: row.resultBlob.type });
     setCatalogSourceFile(file);
@@ -62,11 +65,14 @@ export default function App() {
           </p>
         </header>
 
+        {/* One engine for every tab: ffmpeg.wasm is a module-level singleton, so
+            the video tab reuses whatever this already loaded. */}
         <EngineStatus engineState={engineState} onRetry={retryEngine} />
 
         <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
           {[
-            ["convert", "Convert"],
+            ["convert", "Audio"],
+            ["video", "Video"],
             ["catalog", "Catalog"],
             ["mockup", "Mockup"],
           ].map(([id, label]) => (
@@ -107,6 +113,8 @@ export default function App() {
             )}
           </>
         )}
+
+        {tab === "video" && <VideoTab onSendToCatalog={sendToCatalog} />}
 
         {tab === "catalog" && (
           <CatalogTab
