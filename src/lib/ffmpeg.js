@@ -33,14 +33,26 @@ function getExtension(filename) {
   return idx === -1 ? "" : filename.slice(idx);
 }
 
-export async function convertFile(file, { args, outputName, mimeType }, onProgress) {
+/**
+ * Runs one ffmpeg pass over one file.
+ *
+ * `preArgs` land *before* `-i`, which is not cosmetic: `-ss` in front of the
+ * input makes ffmpeg seek to the keyframe directly, while the same flag after
+ * the input decodes and discards everything up to that point. For trimming a
+ * long clip that is the difference between instant and minutes.
+ */
+export async function convertFile(
+  file,
+  { args, outputName, mimeType, preArgs = [] },
+  onProgress
+) {
   const ff = await loadFFmpeg();
   const inputName = "input" + getExtension(file.name);
   await ff.writeFile(inputName, await fetchFile(file));
   const handler = ({ progress }) => onProgress(Math.max(0, Math.min(1, progress)));
   ff.on("progress", handler);
   try {
-    const code = await ff.exec(["-i", inputName, ...args, outputName]);
+    const code = await ff.exec([...preArgs, "-i", inputName, ...args, outputName]);
     if (code !== 0) throw new Error("Conversion failed (ffmpeg exit " + code + ")");
     const data = await ff.readFile(outputName);
     return new Blob([data.buffer], { type: mimeType });

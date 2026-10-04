@@ -1,6 +1,25 @@
 import { useRef, useState } from "react";
 
-export default function DropZone({ compact, onFiles, skippedNotice }) {
+const AUDIO_DEFAULTS = {
+  accept: "audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac",
+  title: "Drag & drop audio files here",
+  formatHint: "MP3, M4A/AAC, WAV, OGG, FLAC · multiple OK",
+  addMoreLabel: "+ Add more files",
+};
+
+/**
+ * Shared drop target. The audio defaults are baked in so the Convert tab keeps
+ * working untouched; the Video tab passes its own accept list and copy.
+ */
+export default function DropZone({
+  compact,
+  onFiles,
+  skippedNotice,
+  accept = AUDIO_DEFAULTS.accept,
+  title = AUDIO_DEFAULTS.title,
+  formatHint = AUDIO_DEFAULTS.formatHint,
+  addMoreLabel = AUDIO_DEFAULTS.addMoreLabel,
+}) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -15,7 +34,7 @@ export default function DropZone({ compact, onFiles, skippedNotice }) {
       ref={inputRef}
       type="file"
       multiple
-      accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac"
+      accept={accept}
       className="hidden"
       onChange={(e) => {
         handleFiles(e.target.files);
@@ -31,7 +50,7 @@ export default function DropZone({ compact, onFiles, skippedNotice }) {
           onClick={openPicker}
           className="w-full rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
         >
-          + Add more files
+          {addMoreLabel}
         </button>
         {inputEl}
         {skippedNotice && (
@@ -60,16 +79,14 @@ export default function DropZone({ compact, onFiles, skippedNotice }) {
         }`}
       >
         <div className="text-3xl mb-2">⬇</div>
-        <p className="text-zinc-700 font-medium">Drag & drop audio files here</p>
+        <p className="text-zinc-700 font-medium">{title}</p>
         <p className="text-zinc-500 text-sm mt-1">
           or{" "}
           <span className="text-indigo-600 font-medium underline underline-offset-2">
             Browse files
           </span>
         </p>
-        <p className="text-zinc-400 text-xs mt-4">
-          MP3, M4A/AAC, WAV, OGG, FLAC · multiple OK
-        </p>
+        <p className="text-zinc-400 text-xs mt-4">{formatHint}</p>
       </div>
       {inputEl}
       {skippedNotice && (
